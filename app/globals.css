@@ -1,0 +1,308 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: light;
+  --ink: #0f172a;
+  --line: rgba(15, 23, 42, 0.08);
+  --shadow-sm: 0 1px 2px rgba(15, 23, 42, 0.05);
+  --shadow-card: 0 1px 2px rgba(15, 23, 42, 0.04), 0 10px 30px -18px rgba(15, 23, 42, 0.22);
+  --shadow-lift: 0 2px 4px rgba(15, 23, 42, 0.04), 0 18px 40px -20px rgba(15, 23, 42, 0.3);
+}
+
+html,
+body {
+  background: #f6f7f4;
+  color: var(--ink);
+}
+
+body {
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+  font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+}
+
+/* Hide native number spinners — money fields use tabular figures instead */
+input[type="number"]::-webkit-outer-spin-button,
+input[type="number"]::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+input[type="number"] {
+  -moz-appearance: textfield;
+}
+
+/* ------------------------------ app shell ------------------------------ */
+
+.app-shell {
+  min-height: 100vh;
+  background:
+    radial-gradient(900px 420px at 12% -8%, rgba(205, 227, 163, 0.34) 0%, transparent 62%),
+    radial-gradient(760px 380px at 96% -6%, rgba(232, 224, 190, 0.3) 0%, transparent 58%),
+    linear-gradient(180deg, #fbfcfa 0%, #f5f6f3 42%, #f5f6f3 100%);
+}
+
+/* ------------------------------- login -------------------------------- */
+
+.login-shell {
+  position: relative;
+  min-height: 100vh;
+  /* Vertical scrolling must stay available: the recovery-code step is taller
+     than a short laptop screen. */
+  overflow-x: hidden;
+  background:
+    radial-gradient(1100px 560px at 8% -12%, #eaf4d8 0%, transparent 58%),
+    radial-gradient(900px 520px at 104% -4%, #f6efdc 0%, transparent 56%),
+    linear-gradient(180deg, #fcfdfa 0%, #f2f4ef 100%);
+}
+
+.login-grid {
+  position: absolute;
+  inset: 0;
+  background-image:
+    linear-gradient(to right, rgba(15, 23, 42, 0.05) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(15, 23, 42, 0.05) 1px, transparent 1px);
+  background-size: 48px 48px;
+  -webkit-mask-image: radial-gradient(circle at 50% 32%, #000 0%, transparent 70%);
+  mask-image: radial-gradient(circle at 50% 32%, #000 0%, transparent 70%);
+  pointer-events: none;
+}
+
+.login-glow {
+  position: absolute;
+  border-radius: 9999px;
+  filter: blur(80px);
+  pointer-events: none;
+}
+.login-glow-a {
+  width: 460px;
+  height: 460px;
+  top: -150px;
+  left: -110px;
+  background: #cde3a3;
+  opacity: 0.55;
+}
+.login-glow-b {
+  width: 420px;
+  height: 420px;
+  right: -120px;
+  bottom: -160px;
+  background: #f0e3c0;
+  opacity: 0.5;
+}
+
+.login-card {
+  border-radius: 26px;
+  padding: 34px 30px 26px;
+  background: rgba(255, 255, 255, 0.82);
+  backdrop-filter: blur(20px) saturate(150%);
+  -webkit-backdrop-filter: blur(20px) saturate(150%);
+  border: 1px solid rgba(255, 255, 255, 0.9);
+  box-shadow:
+    0 1px 2px rgba(15, 23, 42, 0.05),
+    0 30px 70px -30px rgba(15, 23, 42, 0.32),
+    0 0 0 1px rgba(15, 23, 42, 0.04);
+  animation: card-in 0.5s cubic-bezier(0.2, 0.75, 0.3, 1) both;
+}
+
+.logo-tile {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 62px;
+  height: 62px;
+  border-radius: 19px;
+  background: #fff;
+  box-shadow:
+    0 1px 2px rgba(15, 23, 42, 0.06),
+    0 14px 30px -16px rgba(72, 114, 26, 0.6),
+    inset 0 0 0 1px rgba(15, 23, 42, 0.05);
+}
+
+.login-field {
+  position: relative;
+}
+
+.login-field-icon {
+  position: absolute;
+  left: 13px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: #94a3b8;
+  pointer-events: none;
+}
+
+.login-input {
+  height: 46px;
+  width: 100%;
+  border-radius: 13px;
+  border: 1px solid #e3e8ef;
+  background: rgba(255, 255, 255, 0.92);
+  padding-left: 38px;
+  padding-right: 14px;
+  font-size: 14px;
+  color: var(--ink);
+  outline: none;
+  transition:
+    border-color 0.16s ease,
+    box-shadow 0.16s ease,
+    background 0.16s ease;
+}
+.login-input::placeholder {
+  color: #b8c2ce;
+}
+.login-input:focus {
+  border-color: #6aa832;
+  background: #fff;
+  box-shadow: 0 0 0 4px rgba(106, 168, 50, 0.14);
+}
+
+.login-check {
+  height: 15px;
+  width: 15px;
+  border-radius: 4px;
+  accent-color: #4f7d1c;
+  cursor: pointer;
+}
+
+.login-error {
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+  border-radius: 11px;
+  background: #fff1f2;
+  padding: 9px 11px;
+  font-size: 12px;
+  line-height: 1.45;
+  color: #9f1239;
+  animation: shake 0.32s ease;
+}
+
+.login-submit {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  height: 46px;
+  width: 100%;
+  border-radius: 13px;
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: #fff;
+  background: linear-gradient(180deg, #60972a 0%, #48721a 100%);
+  box-shadow:
+    0 1px 1px rgba(0, 0, 0, 0.12),
+    0 12px 24px -12px rgba(72, 114, 26, 0.75),
+    inset 0 1px 0 rgba(255, 255, 255, 0.2);
+  transition:
+    filter 0.16s ease,
+    transform 0.12s ease,
+    box-shadow 0.16s ease;
+}
+.login-submit:hover {
+  filter: brightness(1.06);
+}
+.login-submit:active {
+  transform: translateY(1px);
+  box-shadow:
+    0 1px 1px rgba(0, 0, 0, 0.14),
+    0 6px 14px -10px rgba(72, 114, 26, 0.7),
+    inset 0 1px 0 rgba(255, 255, 255, 0.16);
+}
+.login-submit:disabled {
+  cursor: default;
+  opacity: 0.72;
+}
+
+@keyframes card-in {
+  from {
+    opacity: 0;
+    transform: translateY(14px) scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes shake {
+  0%,
+  100% {
+    transform: translateX(0);
+  }
+  25% {
+    transform: translateX(-3px);
+  }
+  75% {
+    transform: translateX(3px);
+  }
+}
+
+@keyframes fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.fade-up {
+  animation: fade-up 0.28s ease both;
+}
+
+/* ---------------- Print: only the payslip is visible ---------------- */
+@media print {
+  @page {
+    size: A4;
+    margin: 12mm;
+  }
+
+  html,
+  body {
+    background: #ffffff !important;
+  }
+
+  body * {
+    visibility: hidden !important;
+  }
+
+  .print-area,
+  .print-area * {
+    visibility: visible !important;
+  }
+
+  .print-area {
+    position: absolute !important;
+    inset: 0 auto auto 0 !important;
+    width: 100% !important;
+    max-width: none !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    border: none !important;
+    border-radius: 0 !important;
+    box-shadow: none !important;
+    background: #ffffff !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  .print-area * {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+    box-shadow: none !important;
+  }
+
+  .no-print {
+    display: none !important;
+  }
+
+  .avoid-break {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+}
