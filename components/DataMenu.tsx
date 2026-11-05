@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { PayslipRecord } from "@/lib/types";
 import { downloadPayrollWorkbook } from "@/lib/export-excel";
-import { Badge, Button, Modal, cn } from "./ui";
+import { Badge, Button, Modal, Portal, cn } from "./ui";
 import {
   Database,
   Download,
@@ -182,15 +182,17 @@ export default function DataMenu({
       />
 
       {notice ? (
-        <div className="fixed bottom-5 left-1/2 z-50 -translate-x-1/2">
-          <button
-            type="button"
-            onClick={() => setNotice(null)}
-            className="rounded-lg bg-slate-900 px-4 py-2.5 text-xs font-medium text-white shadow-lg"
-          >
-            {notice}
-          </button>
-        </div>
+        <Portal>
+          <div className="fixed bottom-5 left-1/2 z-50 -translate-x-1/2">
+            <button
+              type="button"
+              onClick={() => setNotice(null)}
+              className="rounded-lg bg-slate-900 px-4 py-2.5 text-xs font-medium text-white shadow-lg"
+            >
+              {notice}
+            </button>
+          </div>
+        </Portal>
       ) : null}
 
       {pending ? (

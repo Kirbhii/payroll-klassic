@@ -1,7 +1,25 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { ArrowLeft, ChevronRight, Search, X } from "./icons";
+
+/* -------------------------------- portal -------------------------------- */
+
+/**
+ * Renders children straight into <body>.
+ *
+ * Anything with `backdrop-filter` (the glass header) becomes the containing
+ * block for `position: fixed` descendants, so a dialog opened from inside the
+ * header gets trapped in the 64px header box and is clipped to a sliver.
+ * Escaping to <body> keeps fixed overlays anchored to the viewport.
+ */
+export function Portal({ children }: { children: React.ReactNode }) {
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
+  if (!mounted) return null;
+  return createPortal(children, document.body);
+}
 
 /* ------------------------------- helpers ------------------------------- */
 
@@ -379,7 +397,8 @@ export function Modal({
   }, [onClose]);
 
   return (
-    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-slate-900/35 p-4 py-10 backdrop-blur-[3px] sm:items-center">
+    <Portal>
+      <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-slate-900/35 p-4 py-10 backdrop-blur-[3px] sm:items-center">
       <div
         className={cn(
           "w-full rounded-[20px] border border-white/60 bg-white shadow-[0_2px_6px_rgba(15,23,42,0.06),0_30px_70px_-30px_rgba(15,23,42,0.4)]",
@@ -407,7 +426,8 @@ export function Modal({
           </footer>
         ) : null}
       </div>
-    </div>
+      </div>
+    </Portal>
   );
 }
 
