@@ -1,10 +1,12 @@
 "use client";
 
+import { useRef, useState } from "react";
 import type { PayslipDoc } from "@/lib/types";
-import { computePayroll, SSS, PHILHEALTH, PAGIBIG, type PayrollResult } from "@/lib/ph";
+import { computePayroll, type PayrollResult } from "@/lib/ph";
 import { peso, displayName, longDate } from "@/lib/format";
+import { AUTHORISED_BY, downloadPayslipPdf, downloadPayslipWord, payslipFilename } from "@/lib/payslip";
 import { Button } from "./ui";
-import { Printer, Check, ArrowLeft } from "./icons";
+import { Printer, Check, ArrowLeft, Download, FileText } from "./icons";
 
 export default function Payslip({
   doc,
@@ -23,11 +25,35 @@ export default function Payslip({
   saved?: boolean;
 }) {
   const result: PayrollResult = frozen ?? computePayroll(doc.input);
+  const sheetRef = useRef<HTMLDivElement>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const earnings = [
     { label: "Basic pay (semi-monthly)", amount: result.cutoffBasic },
     { label: "Taxable allowances (semi-monthly)", amount: result.cutoffAllowances },
   ].filter((e) => e.amount > 0);
+
+  const handlePdf = async () => {
+    if (!sheetRef.current) return;
+    setError(null);
+    setBusy(true);
+    try {
+      await downloadPayslipPdf(sheetRef.current, payslipFilename(doc, "pdf"));
+    } catch {
+      setError("PDF could not be generated — use Print and choose “Save as PDF”.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleWord = () => {
+    try {
+      downloadPayslipWord(doc, result);
+    } catch {
+      setError("Word file could not be generated.");
+    }
+  };
 
   return (
     <div>
@@ -40,10 +66,10 @@ export default function Payslip({
           <ArrowLeft size={14} />
           {backLabel}
         </button>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           {onSave ? (
             <Button
-              variant={saved ? "secondary" : "secondary"}
+              variant="secondary"
               onClick={onSave}
               disabled={saved}
               className={saved ? "text-emerald-700" : undefined}
@@ -52,14 +78,31 @@ export default function Payslip({
               {saved ? "Saved to history" : "Save to history"}
             </Button>
           ) : null}
-          <Button variant="primary" onClick={() => window.print()}>
+          <Button variant="secondary" onClick={handleWord}>
+            <FileText size={15} />
+            Save as Word
+          </Button>
+          <Button variant="primary" onClick={handlePdf} disabled={busy}>
+            <Download size={15} />
+            {busy ? "Preparing…" : "Save as PDF"}
+          </Button>
+          <Button variant="ghost" onClick={() => window.print()} title="Open the print dialog">
             <Printer size={15} />
-            Print / Save as PDF
+            Print
           </Button>
         </div>
       </div>
 
-      <div className="print-area mx-auto max-w-[820px] rounded-xl border border-slate-200 bg-white p-8 shadow-sm">
+      {error ? (
+        <p className="no-print mb-4 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+          {error}
+        </p>
+      ) : null}
+
+      <div
+        ref={sheetRef}
+        className="print-area mx-auto max-w-[820px] rounded-xl border border-slate-200 bg-white p-8 shadow-sm"
+      >
         {/* ------------------------------ header ------------------------------ */}
         <header className="flex items-start justify-between gap-6 border-b-2 border-slate-900 pb-4">
           <div>
@@ -141,63 +184,26 @@ export default function Payslip({
           <p className="text-2xl font-bold tabular-nums">{peso(result.netPay)}</p>
         </section>
 
-        {/* --------------------------- computation ---------------------------- */}
-        <section className="avoid-break mt-6">
-          <h2 className="mb-2 border-b border-slate-200 pb-1 text-[11px] font-bold uppercase tracking-wider text-slate-500">
-            How each amount was computed
-          </h2>
-          <ul className="space-y-1.5 text-[11px] leading-relaxed text-slate-600">
-            {result.lines.map((line) => (
-              <li key={line.key} className="flex gap-2">
-                <span className="mt-1.5 h-1 w-1 shrink-0 rounded-full bg-slate-400" />
-                <span>
-                  <strong className="font-semibold text-slate-800">{line.label}:</strong> {line.note}
-                </span>
-              </li>
-            ))}
-            <li className="flex gap-2 border-t border-slate-100 pt-1.5">
-              <span className="mt-1.5 h-1 w-1 shrink-0 rounded-full bg-brand-700" />
-              <span>
-                <strong className="font-semibold text-slate-900">Net pay:</strong> Gross pay{" "}
-                {peso(result.gross)} − total deductions {peso(result.totalDeductions)} ={" "}
-                <strong className="text-slate-900">{peso(result.netPay)}</strong>
-              </span>
-            </li>
-          </ul>
-        </section>
-
-        {/* ----------------------------- rate basis --------------------------- */}
-        <section className="avoid-break mt-5 rounded-lg border border-slate-200 bg-slate-50 px-3.5 py-3">
-          <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500">
-            Statutory basis applied
-          </p>
-          <p className="mt-1 text-[10px] leading-relaxed text-slate-500">
-            SSS — {(SSS.employeeRate * 100).toFixed(0)}% employee share of the Monthly Salary Credit
-            (₱{SSS.mscFloor.toLocaleString()}–₱{SSS.mscCeiling.toLocaleString()}) · PhilHealth —{" "}
-            {(PHILHEALTH.employeeRate * 100).toFixed(1)}% employee share, floor ₱
-            {PHILHEALTH.floor.toLocaleString()} / ceiling ₱{PHILHEALTH.ceiling.toLocaleString()} ·
-            Pag-IBIG — {(PAGIBIG.employeeRate * 100).toFixed(0)}% employee share capped at ₱
-            {PAGIBIG.maxFundSalary.toLocaleString()} fund salary · BIR — TRAIN law annual table with the
-            first ₱250,000 exempt, divided across 24 semi-monthly cut-offs. Loan figures follow the
-            employee&apos;s loan amortisation schedule.
-          </p>
-        </section>
-
         {/* ---------------------------- signatures ---------------------------- */}
-        <section className="mt-8 grid grid-cols-2 gap-10 text-[10px] text-slate-500">
+        <section className="mt-10 grid grid-cols-2 gap-10 text-[10px] text-slate-500">
           <div>
             <div className="h-8 border-b border-slate-400" />
-            <p className="mt-1">Employee signature</p>
+            <p className="mt-1 text-[11px] font-semibold uppercase tracking-wide text-slate-900">
+              {displayName(doc.employeeName) || "—"}
+            </p>
+            <p className="mt-0.5">Employee signature</p>
           </div>
           <div>
             <div className="h-8 border-b border-slate-400" />
-            <p className="mt-1">Authorised by</p>
+            <p className="mt-1 text-[11px] font-semibold uppercase tracking-wide text-slate-900">
+              {AUTHORISED_BY}
+            </p>
+            <p className="mt-0.5">Authorised by</p>
           </div>
         </section>
 
         <footer className="mt-6 border-t border-slate-100 pt-2 text-center text-[9px] text-slate-400">
-          System-generated payslip · Payroll Klassic · Figures are computed per cut-off and may differ
-          from the final payroll register.
+          System-generated payslip · Payroll Klassic
         </footer>
       </div>
     </div>
