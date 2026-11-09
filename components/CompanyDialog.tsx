@@ -136,7 +136,7 @@ export default function CompanyDialog({
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 onKeyDown={(e) => e.key === "Enter" && submit()}
-                placeholder="Inoac Batangas"
+                placeholder="Sunrise Manufacturing"
                 autoComplete="off"
                 className="mt-1"
               />

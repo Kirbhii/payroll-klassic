@@ -9,7 +9,6 @@ import type {
   PayslipRecord,
   Accent,
 } from "./types";
-import { SEED_COMPANIES, SEED_EMPLOYEES, SEED_HISTORY } from "./seed";
 import { open, seal } from "./crypto";
 
 /**
@@ -25,16 +24,18 @@ export type StoreState = {
   employees: Employee[];
   payrolls: Record<string, PayrollInput>;
   history: PayslipRecord[];
-  /** True once the sample payslips have been offered — stops them coming back after "Clear all". */
-  demoSeeded?: boolean;
 };
 
+/**
+ * A new vault starts genuinely empty. Nothing is pre-loaded, so the first screen
+ * a client sees is the "add your first company" prompt rather than somebody
+ * else's demo payroll.
+ */
 const INITIAL: StoreState = {
-  companies: SEED_COMPANIES,
-  employees: SEED_EMPLOYEES,
+  companies: [],
+  employees: [],
   payrolls: {},
-  history: SEED_HISTORY,
-  demoSeeded: true,
+  history: [],
 };
 
 export function uid(prefix = "id"): string {
@@ -84,7 +85,6 @@ function sanitise(raw: unknown): StoreState | null {
     employees: Array.isArray(parsed.employees) ? parsed.employees : [],
     payrolls: parsed.payrolls && typeof parsed.payrolls === "object" ? parsed.payrolls : {},
     history: Array.isArray(parsed.history) ? parsed.history : [],
-    demoSeeded: parsed.demoSeeded === true,
   };
 }
 
@@ -132,17 +132,6 @@ export function usePayrollStore(key: CryptoKey | null) {
         loaded = INITIAL;
         blockWrites.current = true;
         if (!cancelled) setLoadError(true);
-      }
-
-      // Data saved before the sample set existed: top it up once, so History is
-      // not empty on first look. `demoSeeded` stops it coming back after a
-      // deliberate "Clear all".
-      if (!loaded.demoSeeded) {
-        loaded = {
-          ...loaded,
-          demoSeeded: true,
-          history: loaded.history.length === 0 ? SEED_HISTORY : loaded.history,
-        };
       }
 
       if (cancelled) return;
@@ -349,16 +338,6 @@ export function usePayrollStore(key: CryptoKey | null) {
     setState((prev) => ({ ...prev, history: prev.history.filter((h) => h.id !== id) }));
   }, []);
 
-  /** Adds the bundled sample payslips, skipping any that are already present. */
-  const loadSampleHistory = useCallback(() => {
-    setState((prev) => {
-      const existing = new Set(prev.history.map((h) => h.id));
-      const additions = SEED_HISTORY.filter((h) => !existing.has(h.id));
-      if (additions.length === 0) return prev;
-      return { ...prev, history: [...prev.history, ...additions] };
-    });
-  }, []);
-
   const clearHistory = useCallback(() => {
     setState((prev) => ({ ...prev, history: [] }));
   }, []);
@@ -426,7 +405,6 @@ export function usePayrollStore(key: CryptoKey | null) {
     resetPayroll,
     savePayslip,
     deletePayslip,
-    loadSampleHistory,
     clearHistory,
     exportBackup,
     importBackup,

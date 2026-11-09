@@ -320,9 +320,9 @@ export default function Home() {
           <div className="mb-5 flex items-start gap-2.5 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-xs leading-relaxed text-rose-800">
             <span className="mt-0.5 shrink-0 font-semibold">!</span>
             <span>
-              The saved vault could not be decrypted, so the app is showing sample data instead.
-              Saving is paused to protect whatever is still on disk — export a backup or reload
-              before making changes.
+              The saved vault could not be decrypted, so the app is starting empty. Saving is
+              paused to protect whatever is still on disk — export a backup or reload before
+              making changes.
             </span>
           </div>
         ) : null}
@@ -391,10 +391,6 @@ export default function Home() {
           <HistoryCompanies
             history={store.history}
             onSelect={(companyId) => setView({ kind: "history", companyId })}
-            onLoadSample={() => {
-              store.loadSampleHistory();
-              setToast("Sample payslips loaded");
-            }}
             onClearAll={() => {
               store.clearHistory();
               setToast("All payslips deleted");

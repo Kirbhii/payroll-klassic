@@ -5,7 +5,7 @@ import type { PayslipRecord } from "@/lib/types";
 import { peso, longDate } from "@/lib/format";
 import { companiesWithHistory, totals } from "@/lib/history";
 import { Button, EmptyState, PageHeader, SearchInput, StatCard, RowLink } from "./ui";
-import { Clock, Download, Trash } from "./icons";
+import { Clock, Trash } from "./icons";
 
 /**
  * Entry point of the History section. Built from the saved payslips rather than
@@ -15,13 +15,11 @@ import { Clock, Download, Trash } from "./icons";
 export default function HistoryCompanies({
   history,
   onSelect,
-  onLoadSample,
   onClearAll,
   onBack,
 }: {
   history: PayslipRecord[];
   onSelect: (companyId: string) => void;
-  onLoadSample: () => void;
   onClearAll: () => void;
   onBack: () => void;
 }) {
@@ -54,10 +52,6 @@ export default function HistoryCompanies({
         subtitle="Every saved cut-off, grouped by company."
         actions={
           <>
-            <Button variant="secondary" onClick={onLoadSample}>
-              <Download size={15} />
-              Load sample data
-            </Button>
             {history.length > 0 ? (
               confirmClear ? (
                 <span className="flex h-9 items-center gap-1.5 rounded-lg border border-rose-200 bg-rose-50 pl-3 pr-1">
@@ -112,16 +106,8 @@ export default function HistoryCompanies({
           title={history.length === 0 ? "No payslips saved yet" : "Nothing matched your search"}
           description={
             history.length === 0
-              ? "Save a payslip from an employee, or load the sample set to see how it looks."
+              ? "Open an employee, compute their pay, and press Save. Every saved cut-off is kept here."
               : "Try a different company or employee name."
-          }
-          action={
-            history.length === 0 ? (
-              <Button variant="primary" onClick={onLoadSample}>
-                <Download size={15} />
-                Load sample data
-              </Button>
-            ) : null
           }
         />
       ) : (

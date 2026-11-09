@@ -61,8 +61,8 @@ export async function parseEmployeeSheet(file: File): Promise<ParseResult> {
   let positionIndex = 1;
   let salaryIndex = 2;
 
-  // A sheet often has a title row above the real header ("Armor 8 — Employee
-  // Master List"). Both match NAME_RE, so pick the row that recognises the most
+  // A sheet often has a title row above the real header ("Employee Master
+  // List"). Both match NAME_RE, so pick the row that recognises the most
   // distinct columns instead of simply the first match.
   const searchLimit = Math.min(matrix.length, 10);
   let bestScore = 0;
