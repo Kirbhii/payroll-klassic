@@ -122,10 +122,10 @@ export function usePayrollStore(key: CryptoKey | null) {
       let needsWrite = false;
 
       try {
-        // The server copy is the cross-device truth, so it wins when reachable.
-        // localStorage stays as an offline cache, scoped per account.
-        let fromServer = false;
+        // The server copy is the cross-device truth, so it normally wins when
+        // reachable. localStorage stays as an offline cache, scoped per account.
         let userId: string | null = null;
+        let serverState: StoreState | null = null;
 
         if (isCloudConfigured) {
           const { data: sessionData } = await supabase.auth.getSession();
@@ -140,8 +140,7 @@ export function usePayrollStore(key: CryptoKey | null) {
 
             if (row?.data_iv && row?.data_ct) {
               const plain = await open(key, { iv: row.data_iv, ct: row.data_ct });
-              loaded = sanitise(JSON.parse(plain)) ?? INITIAL;
-              fromServer = true;
+              serverState = sanitise(JSON.parse(plain)) ?? INITIAL;
             }
           }
         }
@@ -149,16 +148,35 @@ export function usePayrollStore(key: CryptoKey | null) {
         // Cache per account, so signing into a second account in the same
         // browser never tries to open the first account's ciphertext.
         cacheKey.current = userId ? `${DATA_KEY}:${userId}` : DATA_KEY;
+        const pendingKey = `${cacheKey.current}:pending`;
 
-        if (!fromServer) {
-          const sealed = window.localStorage.getItem(cacheKey.current);
-          if (sealed) {
-            const plain = await open(key, JSON.parse(sealed));
-            loaded = sanitise(JSON.parse(plain)) ?? INITIAL;
-          } else {
-            loaded = INITIAL;
+        let localState: StoreState | null = null;
+        const localSealed = window.localStorage.getItem(cacheKey.current);
+        if (localSealed) {
+          try {
+            const plain = await open(key, JSON.parse(localSealed));
+            localState = sanitise(JSON.parse(plain)) ?? INITIAL;
+          } catch {
+            /* unreadable — fall through to whatever the server has */
           }
-          needsWrite = true; // push whatever we have up to the server
+        }
+
+        // An edit that never reached the server has to beat the server copy.
+        // Without this, a moment offline followed by a reload would quietly
+        // roll the desk back to its previous state and lose the work.
+        const hasPending = window.localStorage.getItem(pendingKey) === "1";
+
+        if (hasPending && localState) {
+          loaded = localState;
+          needsWrite = true; // push it up as soon as the desk is open
+        } else if (serverState) {
+          loaded = serverState;
+        } else if (localState) {
+          loaded = localState;
+          needsWrite = true; // the server has never seen this desk
+        } else {
+          loaded = INITIAL;
+          needsWrite = true;
         }
       } catch {
         loaded = INITIAL;
@@ -204,17 +222,26 @@ export function usePayrollStore(key: CryptoKey | null) {
           return; // quota exceeded — nothing useful to push either
         }
 
+        const pendingKey = `${cacheKey.current}:pending`;
         if (!isCloudConfigured) return;
         try {
           const { data: sessionData } = await supabase.auth.getSession();
           const userId = sessionData.session?.user?.id;
           if (!userId) return;
-          await supabase
+          const { error } = await supabase
             .from("vaults")
             .update({ data_iv: sealed.iv, data_ct: sealed.ct })
             .eq("user_id", userId);
+          if (error) throw error;
+          window.localStorage.removeItem(pendingKey);
         } catch {
-          /* offline — the cache above already has it, next edit retries */
+          // Offline or refused. Mark the local copy as the newest thing we have
+          // so the next load prefers it over a stale server copy.
+          try {
+            window.localStorage.setItem(pendingKey, "1");
+          } catch {
+            /* nothing else we can do */
+          }
         }
       })();
     }, 400);
