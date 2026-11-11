@@ -55,6 +55,62 @@ export function fromB64(text: string): Uint8Array {
   return bytes;
 }
 
+/**
+ * Derives a base64 string instead of a CryptoKey.
+ *
+ * Used for the sign-in credential: the server is given `PBKDF2(password, authSalt)`
+ * rather than the password itself, so a database leak or a curious operator never
+ * sees the secret that actually unwraps the vault.
+ */
+export async function deriveSecretB64(
+  secret: string,
+  saltB64: string,
+  iterations: number
+): Promise<string> {
+  const material = await crypto.subtle.importKey(
+    "raw",
+    encoder.encode(secret),
+    "PBKDF2",
+    false,
+    ["deriveBits"]
+  );
+  const bits = await crypto.subtle.deriveBits(
+    {
+      name: "PBKDF2",
+      salt: fromB64(saltB64) as unknown as BufferSource,
+      iterations,
+      hash: "SHA-256",
+    },
+    material,
+    256
+  );
+  return toB64(bits);
+}
+
+/** Deterministic per-account salt, so no salt ever has to be looked up first. */
+export async function sha256B64(text: string): Promise<string> {
+  const digest = await crypto.subtle.digest("SHA-256", encoder.encode(text));
+  return toB64(digest);
+}
+
+/**
+ * Proof that the caller holds the recovery code, without sending the code.
+ *
+ * The server stores only a bcrypt of this value, so it can authorise a password
+ * reset without ever being able to reconstruct the code that unwraps the vault.
+ */
+export async function recoveryProof(code: string): Promise<string> {
+  const key = await crypto.subtle.importKey(
+    "raw",
+    encoder.encode(normalizeCode(code)),
+    { name: "HMAC", hash: "SHA-256" },
+    false,
+    ["sign"]
+  );
+  const sig = await crypto.subtle.sign("HMAC", key, encoder.encode("klassic-recovery-proof-v1"));
+  return toB64(sig);
+}
+
 /** Derives a non-extractable AES-GCM key from a password or recovery code. */
 export async function deriveKey(
   secret: string,

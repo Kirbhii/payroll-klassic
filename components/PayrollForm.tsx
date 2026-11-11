@@ -293,7 +293,7 @@ export default function PayrollForm({
                 View printable payslip
               </button>
               <p className="mt-2 text-center text-[10px] text-slate-400">
-                Auto-saved in this browser
+                Auto-saved to your account
               </p>
             </div>
           </div>

@@ -2,17 +2,15 @@
 
 import { useEffect, useRef, useState } from "react";
 import {
-  accountUsername,
   createAccount,
-  finishRecovery,
-  hasAccount,
-  hasLegacyAccount,
   hasWebCrypto,
+  looksLikeEmail,
   MIN_PASSWORD,
   passwordHint,
+  recoverAccount,
   signIn,
-  unlockWithRecovery,
 } from "@/lib/auth";
+import { isCloudConfigured } from "@/lib/supabase";
 import { formatCode, normalizeCode } from "@/lib/crypto";
 import { BRAND, cn } from "./ui";
 import {
@@ -28,21 +26,23 @@ import {
   Warning,
 } from "./icons";
 
-type Step = "boot" | "insecure" | "login" | "setup" | "recover" | "recoverNew" | "code";
+type Step = "boot" | "insecure" | "unconfigured" | "login" | "setup" | "recover" | "code";
 
 /**
- * Sign-in and first-run setup for the encrypted vault.
+ * Sign in, sign up, or recover.
  *
- * Three ways in: an existing account, a recovery code, or — on a machine that
- * has never run this app — creating the account for the first time.
+ * The account lives on a server now, so the same email and password open the
+ * payroll from any device. What the server never receives is the password — it
+ * is given a value derived from it — so the payroll stays unreadable to anyone
+ * who can see the database.
  */
 export default function LoginScreen({
   onSignedIn,
 }: {
-  onSignedIn: (username: string, key: CryptoKey, recoveryCode?: string) => void;
+  onSignedIn: (email: string, key: CryptoKey, recoveryCode?: string) => void;
 }) {
   const [step, setStep] = useState<Step>("boot");
-  const [username, setUsername] = useState("");
+  const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirm, setConfirm] = useState("");
   const [code, setCode] = useState("");
@@ -51,26 +51,26 @@ export default function LoginScreen({
   const [busy, setBusy] = useState(false);
 
   /** Pending unlock, waiting for the user to acknowledge the recovery code. */
-  const [pending, setPending] = useState<{ username: string; key: CryptoKey } | null>(null);
+  const [pending, setPending] = useState<{ email: string; key: CryptoKey } | null>(null);
   const [issuedCode, setIssuedCode] = useState("");
   const [saved, setSaved] = useState(false);
 
-  const userRef = useRef<HTMLInputElement>(null);
+  const emailRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (!hasWebCrypto()) {
       setStep("insecure");
       return;
     }
-    setStep(hasAccount() || hasLegacyAccount() ? "login" : "setup");
+    if (!isCloudConfigured) {
+      setStep("unconfigured");
+      return;
+    }
+    setStep("login");
   }, []);
 
   useEffect(() => {
-    if (step === "login" || step === "setup") {
-      setUsername(hasAccount() ? accountUsername() : "");
-      userRef.current?.focus();
-    }
-    if (step === "recover") setUsername(accountUsername());
+    if (step === "login" || step === "setup" || step === "recover") emailRef.current?.focus();
   }, [step]);
 
   const reset = () => {
@@ -84,40 +84,43 @@ export default function LoginScreen({
   const doSignIn = async (e?: React.FormEvent) => {
     e?.preventDefault();
     if (busy) return;
+    if (!looksLikeEmail(email)) {
+      setError("Enter the email address for this account.");
+      return;
+    }
     if (!password) {
       setError("Enter your password.");
       return;
     }
     setBusy(true);
     setError(null);
-    const result = await signIn(username, password);
+    const result = await signIn(email, password);
     setBusy(false);
     if (!result.ok) {
       setPassword("");
       setError(
-        result.reason === "user"
-          ? "That username does not match this device."
+        result.reason === "email"
+          ? "Enter the email address for this account."
           : result.reason === "missing"
-            ? "No account on this device yet. Reload to set one up."
+            ? "That account exists but has no payroll attached yet."
             : result.reason === "nokey"
               ? "Encryption is unavailable in this browser."
-              : "Wrong password. Try again."
+              : result.reason === "offline"
+                ? "This build has no server configured, so nobody can sign in."
+                : "Wrong email or password. Try again."
       );
       return;
     }
-    if (result.recoveryCode) {
-      // Upgraded from the old unencrypted gate — show the new recovery code.
-      setIssuedCode(result.recoveryCode);
-      setPending({ username: result.username, key: result.key });
-      setStep("code");
-      return;
-    }
-    onSignedIn(result.username, result.key);
+    onSignedIn(result.email, result.key);
   };
 
   const doCreate = async (e?: React.FormEvent) => {
     e?.preventDefault();
     if (busy) return;
+    if (!looksLikeEmail(email)) {
+      setError("Enter a valid email address.");
+      return;
+    }
     if (password.length < MIN_PASSWORD) {
       setError(`Use at least ${MIN_PASSWORD} characters.`);
       return;
@@ -128,45 +131,40 @@ export default function LoginScreen({
     }
     setBusy(true);
     setError(null);
-    const result = await createAccount(username, password);
+    const result = await createAccount(email, password);
     setBusy(false);
     if (!result.ok) {
       setError(
-        result.reason === "short"
-          ? `Use at least ${MIN_PASSWORD} characters.`
-          : result.reason === "exists"
-            ? "An account already exists on this device."
-            : "This browser cannot encrypt data."
+        result.reason === "exists"
+          ? "An account with that email already exists. Sign in instead."
+          : result.reason === "confirm"
+            ? "Check your inbox and confirm the address, then sign in."
+            : result.reason === "short"
+              ? `Use at least ${MIN_PASSWORD} characters.`
+              : result.reason === "email"
+                ? "Enter a valid email address."
+                : result.reason === "offline"
+                  ? "This build has no server configured, so accounts cannot be created."
+                  : "Could not create the account. Try again."
       );
       return;
     }
     setIssuedCode(result.recoveryCode);
-    setPending({ username: result.username, key: result.key });
+    setPending({ email: result.email, key: result.key });
     setStep("code");
   };
 
   const doRecover = async (e?: React.FormEvent) => {
     e?.preventDefault();
     if (busy) return;
+    if (!looksLikeEmail(email)) {
+      setError("Enter the email address for this account.");
+      return;
+    }
     if (normalizeCode(code).length !== 30) {
       setError("A recovery code has 30 characters. Check for missing groups.");
       return;
     }
-    setBusy(true);
-    setError(null);
-    const result = await unlockWithRecovery(code);
-    setBusy(false);
-    if (!result.ok) {
-      setError("That recovery code does not open this vault.");
-      return;
-    }
-    reset();
-    setStep("recoverNew");
-  };
-
-  const doFinishRecovery = async (e?: React.FormEvent) => {
-    e?.preventDefault();
-    if (busy) return;
     if (password.length < MIN_PASSWORD) {
       setError(`Use at least ${MIN_PASSWORD} characters.`);
       return;
@@ -177,25 +175,32 @@ export default function LoginScreen({
     }
     setBusy(true);
     setError(null);
-    const result = await finishRecovery(password);
+    const result = await recoverAccount(email, code, password);
     setBusy(false);
     if (!result.ok) {
       setError(
-        result.reason === "short"
-          ? `Use at least ${MIN_PASSWORD} characters.`
-          : "The recovery session expired. Start again."
+        result.reason === "code"
+          ? "That recovery code does not open this account."
+          : result.reason === "email"
+            ? "No account with that email."
+            : result.reason === "short"
+              ? `Use at least ${MIN_PASSWORD} characters.`
+              : result.reason === "offline"
+                ? "This build has no server configured."
+                : "Recovery failed. Try again."
       );
       return;
     }
     setIssuedCode(result.recoveryCode);
-    setPending({ username: accountUsername(), key: result.key });
+    setPending({ email: result.email, key: result.key });
     reset();
+    setCode("");
     setStep("code");
   };
 
   const copyCode = async () => {
     try {
-      await navigator.clipboard.writeText(issuedCode);
+      await navigator.clipboard.writeText(formatCode(issuedCode));
       setError(null);
     } catch {
       setError("Could not copy. Write it down by hand instead.");
@@ -206,7 +211,7 @@ export default function LoginScreen({
     const body = [
       "Klassic Payroll — recovery code",
       "",
-      issuedCode,
+      formatCode(issuedCode),
       "",
       "Keep this somewhere safe and offline. It is the only way back in if you",
       "forget your password. Anyone holding it can open your payroll data.",
@@ -259,11 +264,33 @@ export default function LoginScreen({
     );
   }
 
+  if (step === "unconfigured") {
+    return (
+      <div className="login-shell">
+        <main className="relative z-10 flex min-h-screen items-center justify-center px-5 py-10">
+          <div className="login-card w-full max-w-[440px] text-center">
+            <span className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-amber-50 text-amber-600">
+              <Warning size={22} />
+            </span>
+            <h1 className="mt-4 text-lg font-semibold text-slate-900">No server configured</h1>
+            <p className="mt-2 text-[13px] leading-relaxed text-slate-500">
+              This copy of the app has no database address, so accounts cannot be created or
+              opened. Set <code className="rounded bg-slate-100 px-1 py-0.5 text-[12px]">NEXT_PUBLIC_SUPABASE_URL</code>{" "}
+              and{" "}
+              <code className="rounded bg-slate-100 px-1 py-0.5 text-[12px]">NEXT_PUBLIC_SUPABASE_ANON_KEY</code>{" "}
+              and rebuild.
+            </p>
+          </div>
+        </main>
+      </div>
+    );
+  }
+
   const heading =
     step === "setup"
-      ? { title: "Set up the payroll desk", sub: "One account. It also encrypts everything you save." }
-      : step === "recover" || step === "recoverNew"
-        ? { title: "Use your recovery code", sub: "This opens the vault without the password." }
+      ? { title: "Create your account", sub: "One account. It works on every device you sign in from." }
+      : step === "recover"
+        ? { title: "Use your recovery code", sub: "This opens the vault and sets a new password." }
         : step === "code"
           ? { title: "Save your recovery code", sub: "Shown once. It cannot be shown again." }
           : { title: "Klassic Payroll", sub: "Sign in to open the payroll desk." };
@@ -289,15 +316,17 @@ export default function LoginScreen({
 
           {step === "login" ? (
             <form onSubmit={doSignIn} className="mt-7 space-y-4">
-              <Field label="Username">
+              <Field label="Email">
                 <User size={16} className="login-field-icon" />
                 <input
-                  ref={userRef}
-                  value={username}
+                  ref={emailRef}
+                  type="email"
+                  value={email}
                   onChange={(e) => {
-                    setUsername(e.target.value);
+                    setEmail(e.target.value);
                     setError(null);
                   }}
+                  placeholder="you@company.com"
                   autoComplete="username"
                   autoCapitalize="none"
                   spellCheck={false}
@@ -323,34 +352,47 @@ export default function LoginScreen({
               {error ? <ErrorNote>{error}</ErrorNote> : null}
 
               <button type="submit" disabled={busy} className="login-submit">
-                {busy ? "Unlocking…" : <>Unlock <ArrowLeft size={15} className="rotate-180" /></>}
+                {busy ? "Signing in…" : <>Sign in <ArrowLeft size={15} className="rotate-180" /></>}
               </button>
 
-              <button
-                type="button"
-                onClick={() => {
-                  reset();
-                  setStep("recover");
-                }}
-                className="block w-full text-center text-[11.5px] font-medium text-slate-400 transition hover:text-slate-700"
-              >
-                Forgot password? Use a recovery code
-              </button>
+              <div className="flex items-center justify-between pt-1">
+                <button
+                  type="button"
+                  onClick={() => {
+                    reset();
+                    setStep("recover");
+                  }}
+                  className="text-[11.5px] font-medium text-slate-400 transition hover:text-slate-700"
+                >
+                  Forgot password?
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    reset();
+                    setStep("setup");
+                  }}
+                  className="text-[11.5px] font-medium text-brand-700 transition hover:text-brand-800"
+                >
+                  Create an account
+                </button>
+              </div>
             </form>
           ) : null}
 
           {step === "setup" ? (
             <form onSubmit={doCreate} className="mt-7 space-y-4">
-              <Field label="Username">
+              <Field label="Email">
                 <User size={16} className="login-field-icon" />
                 <input
-                  ref={userRef}
-                  value={username}
+                  ref={emailRef}
+                  type="email"
+                  value={email}
                   onChange={(e) => {
-                    setUsername(e.target.value);
+                    setEmail(e.target.value);
                     setError(null);
                   }}
-                  placeholder="admin"
+                  placeholder="you@company.com"
                   autoComplete="username"
                   autoCapitalize="none"
                   spellCheck={false}
@@ -373,9 +415,7 @@ export default function LoginScreen({
                 <RevealButton shown={showPassword} onToggle={() => setShowPassword((v) => !v)} />
               </Field>
 
-              {password ? (
-                <StrengthMeter password={password} />
-              ) : null}
+              {password ? <StrengthMeter password={password} /> : null}
 
               <Field label="Repeat password">
                 <Lock size={16} className="login-field-icon" />
@@ -400,15 +440,44 @@ export default function LoginScreen({
               <p className="flex items-start gap-1.5 text-[11px] leading-relaxed text-slate-400">
                 <ShieldCheck size={13} className="mt-0.5 shrink-0 text-brand-600" />
                 <span>
-                  Your password encrypts every record on this computer. It is never stored, so nobody
-                  can recover it for you.
+                  Your password is never sent anywhere. It is used here to derive the key that
+                  encrypts every record, so nobody — including the server — can read your payroll.
                 </span>
               </p>
+
+              <button
+                type="button"
+                onClick={() => {
+                  reset();
+                  setStep("login");
+                }}
+                className="block w-full text-center text-[11.5px] font-medium text-slate-400 transition hover:text-slate-700"
+              >
+                I already have an account
+              </button>
             </form>
           ) : null}
 
           {step === "recover" ? (
             <form onSubmit={doRecover} className="mt-7 space-y-4">
+              <Field label="Email">
+                <User size={16} className="login-field-icon" />
+                <input
+                  ref={emailRef}
+                  type="email"
+                  value={email}
+                  onChange={(e) => {
+                    setEmail(e.target.value);
+                    setError(null);
+                  }}
+                  placeholder="you@company.com"
+                  autoComplete="username"
+                  autoCapitalize="none"
+                  spellCheck={false}
+                  className="login-input"
+                />
+              </Field>
+
               <Field label="Recovery code" hint="30 characters, dashes optional">
                 <Key size={16} className="login-field-icon" />
                 <input
@@ -423,33 +492,6 @@ export default function LoginScreen({
                   className="login-input font-mono text-[12.5px] tracking-wide"
                 />
               </Field>
-
-              {error ? <ErrorNote>{error}</ErrorNote> : null}
-
-              <button type="submit" disabled={busy} className="login-submit">
-                {busy ? "Checking…" : <>Open vault <ArrowLeft size={15} className="rotate-180" /></>}
-              </button>
-
-              <button
-                type="button"
-                onClick={() => {
-                  reset();
-                  setCode("");
-                  setStep("login");
-                }}
-                className="block w-full text-center text-[11.5px] font-medium text-slate-400 transition hover:text-slate-700"
-              >
-                Back to sign in
-              </button>
-            </form>
-          ) : null}
-
-          {step === "recoverNew" ? (
-            <form onSubmit={doFinishRecovery} className="mt-7 space-y-4">
-              <p className="rounded-lg bg-brand-50 px-3 py-2.5 text-[11.5px] leading-relaxed text-brand-800">
-                Code accepted. Choose a new password — the old one no longer works, and a fresh
-                recovery code will be issued.
-              </p>
 
               <Field label="New password" hint={`At least ${MIN_PASSWORD} characters`}>
                 <Lock size={16} className="login-field-icon" />
@@ -483,7 +525,19 @@ export default function LoginScreen({
               {error ? <ErrorNote>{error}</ErrorNote> : null}
 
               <button type="submit" disabled={busy} className="login-submit">
-                {busy ? "Saving…" : <>Set password <ArrowLeft size={15} className="rotate-180" /></>}
+                {busy ? "Checking…" : <>Open vault <ArrowLeft size={15} className="rotate-180" /></>}
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  reset();
+                  setCode("");
+                  setStep("login");
+                }}
+                className="block w-full text-center text-[11.5px] font-medium text-slate-400 transition hover:text-slate-700"
+              >
+                Back to sign in
               </button>
             </form>
           ) : null}
@@ -540,7 +594,7 @@ export default function LoginScreen({
               <button
                 type="button"
                 disabled={!saved || !pending}
-                onClick={() => pending && onSignedIn(pending.username, pending.key)}
+                onClick={() => pending && onSignedIn(pending.email, pending.key)}
                 className="login-submit disabled:opacity-50"
               >
                 Continue to payroll <ArrowLeft size={15} className="rotate-180" />
@@ -552,7 +606,7 @@ export default function LoginScreen({
 
           <p className="mt-6 flex items-center justify-center gap-1.5 text-[11px] text-slate-400">
             <ShieldCheck size={13} className="text-brand-600" />
-            Encrypted on this device · nothing is uploaded
+            Encrypted on this device · the server holds only ciphertext
           </p>
         </div>
       </main>

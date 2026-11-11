@@ -37,6 +37,8 @@ export default function AccountMenu({
   }, [open]);
 
   const initial = username.trim().charAt(0).toUpperCase() || "A";
+  /** The account is an email now; the chip shows the part before the @. */
+  const displayName = username.includes("@") ? username.split("@")[0] : username;
 
   return (
     <div ref={wrapRef} className="relative">
@@ -53,7 +55,7 @@ export default function AccountMenu({
         <span className="flex h-7 w-7 items-center justify-center rounded-full bg-brand-600 text-[11px] font-semibold text-white">
           {initial}
         </span>
-        <span className="hidden max-w-[90px] truncate sm:inline">{username}</span>
+        <span className="hidden max-w-[90px] truncate sm:inline">{displayName}</span>
         <ChevronDown
           size={13}
           className={cn("hidden text-slate-400 transition sm:block", open && "rotate-180")}

@@ -6,7 +6,7 @@ import { computePayroll, type PayrollResult } from "@/lib/ph";
 import type { Employee, EmployeeDraft, PayrollInput, PayslipDoc, PayslipRecord } from "@/lib/types";
 import AppHeader, { type Section } from "@/components/AppHeader";
 import LoginScreen from "@/components/LoginScreen";
-import { restoreSession, signOut } from "@/lib/auth";
+import { restoreSession, signOutNow } from "@/lib/auth";
 import CompanyCards from "@/components/CompanyCards";
 import EmployeeList from "@/components/EmployeeList";
 import EmployeeDialog from "@/components/EmployeeDialog";
@@ -70,7 +70,7 @@ export default function Home() {
   const [importCompanyId, setImportCompanyId] = useState<string | null>(null);
 
   const lockNow = useCallback(() => {
-    signOut();
+    void signOutNow();
     setAuth({ ready: true, username: null, key: null });
     setView({ kind: "companies" });
     setEmployeeDialog(null);
@@ -82,7 +82,7 @@ export default function Home() {
     void (async () => {
       const session = await restoreSession();
       if (cancelled) return;
-      setAuth({ ready: true, username: session?.username ?? null, key: session?.key ?? null });
+      setAuth({ ready: true, username: session?.email ?? null, key: session?.key ?? null });
     })();
     return () => {
       cancelled = true;

@@ -10,6 +10,7 @@ import type {
   Accent,
 } from "./types";
 import { open, seal } from "./crypto";
+import { isCloudConfigured, supabase } from "./supabase";
 
 /**
  * Everything is stored as one AES-GCM blob. The plaintext key below is the
@@ -99,6 +100,8 @@ export function usePayrollStore(key: CryptoKey | null) {
   const timer = useRef<number | null>(null);
   /** Set when the stored blob could not be decrypted — never overwrite it. */
   const blockWrites = useRef(false);
+  /** Per-account cache key, resolved during hydration. */
+  const cacheKey = useRef<string>(DATA_KEY);
 
   // Hydrate after mount so SSR markup stays deterministic. Runs again if the
   // key changes (sign out → sign in).
@@ -119,14 +122,43 @@ export function usePayrollStore(key: CryptoKey | null) {
       let needsWrite = false;
 
       try {
-        const sealed = window.localStorage.getItem(DATA_KEY);
-        if (sealed) {
-          const plain = await open(key, JSON.parse(sealed));
-          loaded = sanitise(JSON.parse(plain)) ?? INITIAL;
-        } else {
-          const legacy = window.localStorage.getItem(LEGACY_DATA_KEY);
-          loaded = legacy ? sanitise(JSON.parse(legacy)) ?? INITIAL : INITIAL;
-          needsWrite = true; // first run, or a plaintext vault being upgraded
+        // The server copy is the cross-device truth, so it wins when reachable.
+        // localStorage stays as an offline cache, scoped per account.
+        let fromServer = false;
+        let userId: string | null = null;
+
+        if (isCloudConfigured) {
+          const { data: sessionData } = await supabase.auth.getSession();
+          userId = sessionData.session?.user?.id ?? null;
+
+          if (userId) {
+            const { data: row } = await supabase
+              .from("vaults")
+              .select("data_iv, data_ct")
+              .eq("user_id", userId)
+              .maybeSingle();
+
+            if (row?.data_iv && row?.data_ct) {
+              const plain = await open(key, { iv: row.data_iv, ct: row.data_ct });
+              loaded = sanitise(JSON.parse(plain)) ?? INITIAL;
+              fromServer = true;
+            }
+          }
+        }
+
+        // Cache per account, so signing into a second account in the same
+        // browser never tries to open the first account's ciphertext.
+        cacheKey.current = userId ? `${DATA_KEY}:${userId}` : DATA_KEY;
+
+        if (!fromServer) {
+          const sealed = window.localStorage.getItem(cacheKey.current);
+          if (sealed) {
+            const plain = await open(key, JSON.parse(sealed));
+            loaded = sanitise(JSON.parse(plain)) ?? INITIAL;
+          } else {
+            loaded = INITIAL;
+          }
+          needsWrite = true; // push whatever we have up to the server
         }
       } catch {
         loaded = INITIAL;
@@ -140,7 +172,7 @@ export function usePayrollStore(key: CryptoKey | null) {
       if (needsWrite) {
         try {
           window.localStorage.setItem(
-            DATA_KEY,
+            cacheKey.current,
             JSON.stringify(await seal(key, JSON.stringify(loaded)))
           );
           window.localStorage.removeItem(LEGACY_DATA_KEY);
@@ -157,21 +189,35 @@ export function usePayrollStore(key: CryptoKey | null) {
   }, [key]);
 
   // Persist. Debounced because the payroll form writes on every keystroke.
+  // localStorage first so the app keeps working offline, then the server copy
+  // so another device sees the same payroll.
   useEffect(() => {
     if (!ready || !key || blockWrites.current) return;
     if (timer.current) window.clearTimeout(timer.current);
     timer.current = window.setTimeout(() => {
       void (async () => {
+        let sealed: { iv: string; ct: string };
         try {
-          window.localStorage.setItem(
-            DATA_KEY,
-            JSON.stringify(await seal(key, JSON.stringify(state)))
-          );
+          sealed = await seal(key, JSON.stringify(state));
+          window.localStorage.setItem(cacheKey.current, JSON.stringify(sealed));
         } catch {
-          /* quota exceeded — ignore */
+          return; // quota exceeded — nothing useful to push either
+        }
+
+        if (!isCloudConfigured) return;
+        try {
+          const { data: sessionData } = await supabase.auth.getSession();
+          const userId = sessionData.session?.user?.id;
+          if (!userId) return;
+          await supabase
+            .from("vaults")
+            .update({ data_iv: sealed.iv, data_ct: sealed.ct })
+            .eq("user_id", userId);
+        } catch {
+          /* offline — the cache above already has it, next edit retries */
         }
       })();
-    }, 150);
+    }, 400);
     return () => {
       if (timer.current) window.clearTimeout(timer.current);
     };
